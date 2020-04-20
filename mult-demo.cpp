@@ -1,93 +1,78 @@
-/*
- * @file demo-bit-packing.cpp This code shows multiple demonstrations of how to use packing features in PALISADE.
- * @author  TPOC: contact@palisade-crypto.org
- *
- * @copyright Copyright (c) 2019, New Jersey Institute of Technology (NJIT)
- * All rights reserved.
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
- * 1. Redistributions of source code must retain the above copyright notice, this
- * list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright notice, this
- * list of conditions and the following disclaimer in the documentation and/or other
- * materials provided with the distribution.
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
- * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
- * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- */
-
 #include <iostream>
 #include <fstream>
-#include <random>
+#include <limits>
 #include <iterator>
+#include <random>
 
 #include "palisade.h"
-#include "cryptocontext.h"
 
-#include "encoding/encodings.h"
+#include "cryptocontextgen.h"
+#include "cryptocontexthelper.h"
 
 #include "utils/debug.h"
-#include "utils/parmfactory.h"
-#include "lattice/elemparamfactory.h"
-
-#include <cmath>
 
 using namespace std;
 using namespace lbcrypto;
 
+
 void BGV_demo();
 
-int main(void) {
+int main() {
 	BGV_demo();
-	return EXIT_SUCCESS;
+	return 0;
+}
+
+CryptoContext<DCRTPoly> GenerateBGVrnsContext(usint ptm, usint mult_depth) {
+
+	usint m = 32768;
+	usint numPrimes = 10;
+	usint relin = 10;
+	usint maxDepth = 10; //the maximum power of secret key for which the relinearization key is generated
+	usint firstModSize = 50;
+	usint dcrtBits = 50; // size of "small" CRT moduli
+
+
+	auto cc = CryptoContextFactory<DCRTPoly>::genCryptoContextBGVrnsWithParamsGen(
+		m, numPrimes, ptm, relin, OPTIMIZED, mult_depth, maxDepth, BV, firstModSize, dcrtBits, 0);
+  cc->Enable(ENCRYPTION);
+  cc->Enable(SHE);
+  cc->Enable(LEVELEDSHE);
+
+  std::cout << "\nParameters BGVrns for depth " << mult_depth << std::endl;
+  std::cout << "p = " << cc->GetCryptoParameters()->GetPlaintextModulus() <<
+  std::endl; std::cout << "n = " <<
+  cc->GetCryptoParameters()->GetElementParams()->GetCyclotomicOrder() / 2 <<
+  std::endl; std::cout << "log2 q = " <<
+  log2(cc->GetCryptoParameters()->GetElementParams()->GetModulus().ConvertToDouble())
+  << "\n" << std::endl;
+
+  return cc;
 }
 
 void BGV_demo() {
-	usint m = 32768;
-	usint relin = 10;
-	float stdDev = 4;
-	PlaintextModulus ptm = 1021;
-	usint mod_chain_bits = 100;
 
-	shared_ptr<Poly::Params> parms = ElemParamFactory::GenElemParams<Poly::Params>(m, mod_chain_bits);
-	CryptoContext<Poly> cc = CryptoContextFactory<Poly>::genCryptoContextBGV(parms, ptm, relin, stdDev, OPTIMIZED, 5);
-	cc->Enable(ENCRYPTION);
-	cc->Enable(SHE);
-	cc->Enable(LEVELEDSHE);
+	usint ptm = 1021;
 
-	// Initialize the public key containers.
-	LPKeyPair<Poly> kp;
-	std::vector<int64_t> vectorOfInts1 = { 1, 0, 1 };
-	Plaintext intArray1 = cc->MakeCoefPackedPlaintext(vectorOfInts1);
+	CryptoContext<DCRTPoly> cc = GenerateBGVrnsContext(ptm, 10);
 
-	std::vector<int64_t> vectorOfInts2 = { 0, 1, 0 };
-	Plaintext intArray2 = cc->MakeCoefPackedPlaintext(vectorOfInts2);
+	// KeyGen
+	LPKeyPair<DCRTPoly> keyPair = cc->KeyGen();
+	cc->EvalMultKeyGen(keyPair.secretKey);
 
-	kp = cc->KeyGen();
-	cc->EvalMultKeyGen(kp.secretKey);
+	std::vector<int64_t> vectorOfInts = {1,1};
+	Plaintext plaintext = cc->MakeCoefPackedPlaintext(vectorOfInts);
 
-	Ciphertext<Poly> ciphertext1;
-	Ciphertext<Poly> ciphertext2;
+	vector<Ciphertext<DCRTPoly>> ciphertexts;
 
-	ciphertext1 = cc->Encrypt(kp.publicKey, intArray1);
-	ciphertext2 = cc->Encrypt(kp.publicKey, intArray2);
+	for (int i = 0; i < 10; i++)
+		ciphertexts.push_back(cc->Encrypt(keyPair.publicKey, plaintext));
 
-	Ciphertext<Poly> cResult = cc->EvalMult(ciphertext1, ciphertext2);
-	cResult = cc->EvalMult(cResult, ciphertext2);
+	Ciphertext<DCRTPoly> ciphertextMult;
+	ciphertextMult = cc->EvalMultMany(ciphertexts);
 
-	LPKeyPair<Poly> newKp = cc->KeyGen();
-	LPEvalKey<Poly> keySwitchHint2 = cc->KeySwitchGen(kp.secretKey, newKp.secretKey);
-	cResult = cc->KeySwitch(keySwitchHint2, cResult);
-
-	Plaintext results;
-	cc->Decrypt(newKp.secretKey, cResult, &results);
-	std::cout << "Answer: " << results << std::endl;
+	Plaintext plaintextDec;
+	cc->Decrypt(keyPair.secretKey, ciphertextMult, &plaintextDec);
+	//plaintextDec->SetLength(plaintext->GetLength());
+	std::cout << "Original plaintext: " << plaintext << std::endl;
+	std::cout << "Evaluated plaintext: " << plaintextDec << std::endl;
 }

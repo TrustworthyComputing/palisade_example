@@ -2,11 +2,11 @@
 
 ## Pre-requisites
 
-To build this example, first, you need to have [PALISADE](https://gitlab.com/palisade/palisade-release) installed on your system. Installation instructions are provided [here](https://gitlab.com/palisade/palisade-release#build-instructions).
+To build this example, first, you need to have [PALISADE](https://gitlab.com/palisade/palisade-development) installed on your system. Installation instructions are provided [here](https://gitlab.com/palisade/palisade-development#detailed-information-about-building-palisade).
 
 Then download or clone this PALISADE example repository e.g.,
 ```
-git clone -b master https://gitlab.com/palisade/palisade-release.git
+git clone -b master https://gitlab.com/palisade/palisade-development.git
 ```
 
 ## Build this example
