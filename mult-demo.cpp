@@ -51,20 +51,28 @@ CryptoContext<DCRTPoly> GenerateBGVrnsContext(usint ptm, usint mult_depth) {
 
 void BGV_demo() {
 
-	usint ptm = 1021;
+	usint ptm = 65537;
 
 	CryptoContext<DCRTPoly> cc = GenerateBGVrnsContext(ptm, 10);
+
+	usint slots = cc->GetEncodingParams()->GetBatchSize();
+	std::cout << "Number of slots " << slots << std::endl;
 
 	// KeyGen
 	LPKeyPair<DCRTPoly> keyPair = cc->KeyGen();
 	cc->EvalMultKeyGen(keyPair.secretKey);
 
-	std::vector<int64_t> vectorOfInts = {1,1};
-	Plaintext plaintext = cc->MakeCoefPackedPlaintext(vectorOfInts);
+	std::vector<int64_t> vectorOfInts = {};
+
+	for(usint i = 0; i < slots; i++) {
+		vectorOfInts.push_back(i % 5); // just to avoid wrapping around
+	}
+
+	Plaintext plaintext = cc->MakePackedPlaintext(vectorOfInts);
 
 	vector<Ciphertext<DCRTPoly>> ciphertexts;
 
-	for (int i = 0; i < 10; i++)
+	for (int i = 0; i < 7; i++)
 		ciphertexts.push_back(cc->Encrypt(keyPair.publicKey, plaintext));
 
 	Ciphertext<DCRTPoly> ciphertextMult;
@@ -73,6 +81,5 @@ void BGV_demo() {
 	Plaintext plaintextDec;
 	cc->Decrypt(keyPair.secretKey, ciphertextMult, &plaintextDec);
 	//plaintextDec->SetLength(plaintext->GetLength());
-	std::cout << "Original plaintext: " << plaintext << std::endl;
 	std::cout << "Evaluated plaintext: " << plaintextDec << std::endl;
 }
